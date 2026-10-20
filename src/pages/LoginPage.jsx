@@ -49,7 +49,19 @@ export default function LoginPage({ onNavigate, onLoginSuccess }) {
 
     const googleClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
 
-    if (window.google?.accounts?.id && googleClientId) {
+    if (!googleClientId) {
+      setError('Google Sign-In requires VITE_GOOGLE_CLIENT_ID configured in your environment variables.');
+      setGoogleLoading(false);
+      return;
+    }
+
+    if (!window.google?.accounts?.id) {
+      setError('Google Identity Service is loading. Please check your internet connection and try again.');
+      setGoogleLoading(false);
+      return;
+    }
+
+    try {
       window.google.accounts.id.initialize({
         client_id: googleClientId,
         callback: async (response) => {
@@ -65,20 +77,16 @@ export default function LoginPage({ onNavigate, onLoginSuccess }) {
           }
         }
       });
-      window.google.accounts.id.prompt();
-    } else {
-      setTimeout(async () => {
-        try {
-          const res = await api.auth.login(email, password);
-          if (res && res.user) {
-            handleSuccessfulAuth(res.user);
-          }
-        } catch (err) {
-          setError(err.message || 'Authentication error.');
-        } finally {
+
+      window.google.accounts.id.prompt((notification) => {
+        if (notification.isNotDisplayed() || notification.isSkippedMoment()) {
+          console.warn('[Google Sign-In] One-Tap prompt moment:', notification.getNotDisplayedReason?.() || notification.getSkippedReason?.());
           setGoogleLoading(false);
         }
-      }, 400);
+      });
+    } catch (err) {
+      setError(err.message || 'Error initializing Google Sign-In.');
+      setGoogleLoading(false);
     }
   };
 
