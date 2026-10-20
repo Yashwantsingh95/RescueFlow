@@ -13,11 +13,12 @@ export default function MatchingPage({ donation, onNavigate, onMatchConfirmed })
       setLoading(true);
       setError('');
       try {
-        if (!donation?.id) {
+        const donationId = donation?.id || donation?._id;
+        if (!donationId) {
           throw new Error('No active donation ID to match.');
         }
 
-        const res = await api.matching.find(donation.id);
+        const res = await api.matching.find(donationId);
         if (res && res.match) {
           setMatchData(res.match);
         } else {

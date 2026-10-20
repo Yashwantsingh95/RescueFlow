@@ -18,6 +18,7 @@ import {
   Edit2
 } from 'lucide-react';
 import { api, getCurrentUser } from '../services/api';
+import { getSocket } from '../services/socket';
 import StatCard from '../components/ui/StatCard';
 import ShelterLocationPicker from '../components/ui/ShelterLocationPicker';
 import { formatCoordinates } from '../services/locationService';
@@ -81,6 +82,25 @@ export default function ShelterDashboardPage({ tab = 'dashboard', onNavigate, on
 
   useEffect(() => {
     loadData();
+
+    const socket = getSocket();
+    if (socket) {
+      const handleLiveFeedUpdate = () => {
+        loadData();
+      };
+
+      socket.on('donation:matched', handleLiveFeedUpdate);
+      socket.on('donation:created', handleLiveFeedUpdate);
+      socket.on('donation:accepted', handleLiveFeedUpdate);
+      socket.on('donation:delivered', handleLiveFeedUpdate);
+
+      return () => {
+        socket.off('donation:matched', handleLiveFeedUpdate);
+        socket.off('donation:created', handleLiveFeedUpdate);
+        socket.off('donation:accepted', handleLiveFeedUpdate);
+        socket.off('donation:delivered', handleLiveFeedUpdate);
+      };
+    }
   }, []);
 
   const handleAccept = async (id) => {

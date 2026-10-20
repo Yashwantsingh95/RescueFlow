@@ -53,14 +53,17 @@ export default function LiveTrackingPage({ donation, onNavigate, onDeliveryCompl
   const [rescueData, setRescueData] = useState(null);
   const [donorCoords, setDonorCoords] = useState(
     d.pickupCoordinates || 
+    d.pickupLocation?.coordinates ||
     (Array.isArray(d.pickupLocation?.coordinates) ? d.pickupLocation.coordinates : null)
   );
   const [shelterCoords, setShelterCoords] = useState(
     d.shelter?.coordinates || 
+    d.shelter?.location?.coordinates ||
     (Array.isArray(d.deliveryLocation?.coordinates) ? d.deliveryLocation.coordinates : null)
   );
   const [driverCoords, setDriverCoords] = useState(
     d.driver?.coordinates || 
+    d.driver?.location?.coordinates ||
     (Array.isArray(d.lastDriverLocation?.coordinates) ? d.lastDriverLocation.coordinates : null)
   );
   const [userCoords, setUserCoords] = useState(null);
@@ -68,6 +71,18 @@ export default function LiveTrackingPage({ donation, onNavigate, onDeliveryCompl
   const [userUpdatedAt, setUserUpdatedAt] = useState(null);
   const [driverUpdatedAt, setDriverUpdatedAt] = useState(null);
   const [currentStatus, setCurrentStatus] = useState(d?.status || 'ON_THE_WAY');
+
+  // Sync state if active donation prop updates
+  useEffect(() => {
+    const p = d.pickupCoordinates || d.pickupLocation?.coordinates || (Array.isArray(d.pickupLocation?.coordinates) ? d.pickupLocation.coordinates : null);
+    const s = d.shelter?.coordinates || d.shelter?.location?.coordinates || (Array.isArray(d.deliveryLocation?.coordinates) ? d.deliveryLocation.coordinates : null);
+    const dr = d.driver?.coordinates || d.driver?.location?.coordinates || (Array.isArray(d.lastDriverLocation?.coordinates) ? d.lastDriverLocation.coordinates : null);
+
+    if (isValidCoordinate(p)) setDonorCoords(p);
+    if (isValidCoordinate(s)) setShelterCoords(s);
+    if (isValidCoordinate(dr)) setDriverCoords(dr);
+    if (d.status) setCurrentStatus(d.status);
+  }, [d]);
   
   // Real Distance & ETA Routing States
   const [distanceKm, setDistanceKm] = useState(null);

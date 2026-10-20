@@ -13,6 +13,7 @@ import {
   Power
 } from 'lucide-react';
 import { api, getCurrentUser } from '../services/api';
+import { getSocket } from '../services/socket';
 import StatCard from '../components/ui/StatCard';
 
 export default function DriverDashboardPage({ tab = 'dashboard', onNavigate, onSelectDonation }) {
@@ -44,6 +45,25 @@ export default function DriverDashboardPage({ tab = 'dashboard', onNavigate, onS
 
   useEffect(() => {
     loadData();
+
+    const socket = getSocket();
+    if (socket) {
+      const handleLiveMissionUpdate = () => {
+        loadData();
+      };
+
+      socket.on('donation:accepted', handleLiveMissionUpdate);
+      socket.on('driver:accepted', handleLiveMissionUpdate);
+      socket.on('donation:picked_up', handleLiveMissionUpdate);
+      socket.on('donation:delivered', handleLiveMissionUpdate);
+
+      return () => {
+        socket.off('donation:accepted', handleLiveMissionUpdate);
+        socket.off('driver:accepted', handleLiveMissionUpdate);
+        socket.off('donation:picked_up', handleLiveMissionUpdate);
+        socket.off('donation:delivered', handleLiveMissionUpdate);
+      };
+    }
   }, []);
 
   const handleConfirmPickup = async (id) => {
