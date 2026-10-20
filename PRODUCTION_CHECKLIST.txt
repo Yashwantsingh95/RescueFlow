@@ -1,0 +1,269 @@
+================================================================================
+RESCUEFLOW - PRODUCTION & DEPLOYMENT CHECKLIST
+================================================================================
+File: PRODUCTION_CHECKLIST.txt
+Project: RESCUEFLOW (Real-Time Surplus Food Rescue & Redistribution)
+Status: Frontend live on Vercel | Backend needs deployment for full functionality
+================================================================================
+
+TABLE OF CONTENTS:
+1. THE ROOT CAUSE (Why it is not fully working on Vercel right now)
+2. STEP-BY-STEP DEPLOYMENT PLAN
+3. ENVIRONMENT VARIABLES CHECKLIST
+   - Vercel (Frontend)
+   - Render / Railway (Backend)
+4. CODE BUGS IDENTIFIED & HOW TO FIX THEM
+5. DEMO ACCOUNTS FOR TESTING
+6. END-TO-END WORKFLOW TESTING (3-TAB TEST)
+7. COMMON PRODUCTION ERRORS & TROUBLESHOOTING
+
+================================================================================
+1. THE ROOT CAUSE (Why it is not fully working on Vercel right now)
+================================================================================
+
+In your vercel.json:
+- The configuration runs "npm run build" and serves the static "dist" folder.
+- Rewrites redirect all paths /(.*) to /index.html.
+
+WHAT THIS MEANS:
+1. Vercel is ONLY serving the React (Vite) frontend.
+2. The Node.js Express server (backend/src/server.js) is NOT running on Vercel.
+3. Socket.IO (WebSockets) for real-time live GPS tracking and notifications 
+   cannot run on Vercel's static server.
+4. Background workers (like expiryWorker.js which checks food safety every 30s)
+   require a continuously running Node.js process.
+5. In local development, the backend uses "mongodb-memory-server", which resets 
+   and erases all data every time the server restarts.
+
+RESULT ON LIVE VERCEL:
+When the browser sends a request to /api/...:
+- Vercel rewrites it to /index.html and sends back HTML text instead of JSON data.
+- The app crashes with: "SyntaxError: Unexpected token '<' is not valid JSON".
+
+SOLUTION:
+- Keep the frontend on Vercel.
+- Deploy the backend server to Render.com (or Railway / Fly.io / VPS).
+- Connect the frontend to the backend using the VITE_API_URL environment variable.
+- Connect the backend to a free MongoDB Atlas cloud database.
+
+
+================================================================================
+2. STEP-BY-STEP DEPLOYMENT PLAN
+================================================================================
+
+STEP 1: SET UP MONGODB ATLAS (Cloud Database)
+--------------------------------------------
+1. Go to https://www.mongodb.com/cloud/atlas and create a free account.
+2. Create a new Free Shared Cluster (M0 tier - 100% free forever).
+3. Under "Database Access", create a database user (e.g., username: rescueflow_admin).
+4. Under "Network Access", add IP Address: 0.0.0.0/0 (Allows access from anywhere).
+5. Click "Connect" -> "Drivers" -> Copy the connection string URI:
+   mongodb+srv://<username>:<password>@cluster0.xxxxx.mongodb.net/rescueflow?retryWrites=true&w=majority
+
+STEP 2: DEPLOY BACKEND TO RENDER.COM
+------------------------------------
+Your project already includes a "render.yaml" file ready for Render.
+1. Sign up / Log in to https://render.com
+2. Click "New +" -> "Web Service".
+3. Connect your GitHub repository (Yashwantsingh95/Amihacks- or RescueFlow).
+4. Configure service settings:
+   - Name: rescueflow-backend
+   - Environment: Node
+   - Region: Singapore or Frankfurt (choose closest to your users)
+   - Branch: main
+   - Root Directory: (leave blank or set to .)
+   - Build Command: npm install --include=dev && cd backend && npm install
+   - Start Command: node backend/src/server.js
+   - Plan: Free
+5. Add Environment Variables (see Section 3 below).
+6. Click "Deploy Web Service".
+7. Once deployed, Render gives you a live URL:
+   Example: https://rescueflow-backend.onrender.com
+
+STEP 3: CONNECT VERCEL FRONTEND TO LIVE BACKEND
+----------------------------------------------
+1. Go to your project on https://vercel.com
+2. Go to: Settings -> Environment Variables.
+3. Add the following variable:
+   - Key:   VITE_API_URL
+   - Value: https://rescueflow-backend.onrender.com/api
+4. Go to the "Deployments" tab on Vercel, click the three dots (...) on your 
+   latest deployment, and select "Redeploy" (so Vercel rebuilds with the new env variable).
+
+
+================================================================================
+3. ENVIRONMENT VARIABLES CHECKLIST
+================================================================================
+
+A. VERCEL (FRONTEND) - In Vercel Project Settings > Environment Variables:
+--------------------------------------------------------------------------
+1. VITE_API_URL
+   Value: https://your-backend-service.onrender.com/api
+   Status: MANDATORY. Without this, API requests hit Vercel and fail.
+
+2. VITE_GOOGLE_MAPS_API_KEY
+   Value: AIzaSy... (Your Google Cloud Console API Key)
+   Status: OPTIONAL. The app automatically falls back to OpenStreetMap + Leaflet 
+           and OSRM turn-by-turn road routing if left empty.
+
+3. VITE_GOOGLE_CLIENT_ID
+   Value: xxxxxxxxx.apps.googleusercontent.com
+   Status: OPTIONAL. Required only if using Google One-Tap / Google Sign-In.
+
+
+B. RENDER / RAILWAY (BACKEND) - In Backend Service Environment Variables:
+-------------------------------------------------------------------------
+1. NODE_ENV
+   Value: production
+
+2. PORT
+   Value: 5001 (or auto-assigned by host, e.g., 10000 on Render)
+
+3. MONGODB_URI
+   Value: mongodb+srv://<user>:<password>@cluster0.xxxxx.mongodb.net/rescueflow?retryWrites=true&w=majority
+   Status: MANDATORY for persistent data across restarts.
+
+4. JWT_SECRET
+   Value: your_super_secret_jwt_key_at_least_32_characters_long
+   Status: MANDATORY for auth tokens and password hashing sessions.
+
+5. FRONTEND_URL
+   Value: https://your-app.vercel.app
+   Status: MANDATORY for CORS authorization.
+
+6. CLIENT_URL
+   Value: https://your-app.vercel.app
+
+7. SEED_DEMO
+   Value: true (for first deploy to populate demo accounts, then set to false)
+
+8. GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET
+   Value: (Optional, only needed if using Google OAuth backend verification)
+
+
+================================================================================
+4. CODE BUGS IDENTIFIED & FIXES NEEDED
+================================================================================
+
+BUG 1: Database URI Variable Name Mismatch
+- File: backend/src/config/db.js (Line 7)
+- Issue: db.js checks `process.env.MONGO_URI`, but .env.example defines `MONGODB_URI`.
+  If you set `MONGODB_URI` in Render, db.js ignores it and falls back to memory server.
+- Fix:
+  Change line 7 in backend/src/config/db.js to:
+  `let mongoUri = process.env.MONGODB_URI || process.env.MONGO_URI;`
+
+BUG 2: Hardcoded Coordinates When Creating a Donation
+- File: src/App.jsx (Lines 216-221)
+- Issue: When a donor uses "Locate Me", the GPS coordinates are acquired, but
+  handleDonationCreated hardcodes Delhi coordinates [77.2197, 28.6328]:
+  pickupLocation: {
+    lat: 28.6328,
+    lng: 77.2197,
+    address: newDonationData.pickupLocation || 'ABC Restaurant, Delhi'
+  }
+- Fix: Pass `newDonationData.coords` dynamically so matching uses the donor's 
+  actual real-world location.
+
+BUG 3: Matching Confirmation Not Calling Backend API
+- File: src/pages/MatchingPage.jsx & src/App.jsx
+- Issue: When donor confirms a matched shelter, it only updates local React state
+  and NEVER calls `api.matching.confirm(donationId, shelterId)`.
+- Consequence: 
+  - MongoDB never marks the donation as "MATCHED".
+  - Rescue document is never created.
+  - Shelter never receives the real-time notification on their dashboard.
+  - Driver is never dispatched.
+- Fix:
+  Call `await api.matching.confirm(donation.id, matchData.shelterId)` in 
+  handleConfirm before navigating to tracking.
+
+BUG 4: Missing Quick Demo Logins for Visitors
+- File: src/pages/LoginPage.jsx
+- Issue: Evaluators, judges, or testers visiting your live Vercel URL do not know
+  the passwords for the test accounts.
+- Fix: Add 1-click test login buttons (Donor, Shelter, Driver) to the login screen.
+
+
+================================================================================
+5. DEMO ACCOUNTS FOR TESTING
+================================================================================
+
+When SEED_DEMO=true is run on the backend, these accounts are auto-populated:
+
+1. DONOR ACCOUNT:
+   - Email:    donor@rescueflow.com
+   - Password: password123
+   - Role:     Restaurant / Food Donor
+
+2. SHELTER ACCOUNT:
+   - Email:    shelter@rescueflow.com
+   - Password: password123
+   - Role:     Shelter / NGO Partner
+
+3. DRIVER ACCOUNT:
+   - Email:    driver@rescueflow.com
+   - Password: password123
+   - Role:     Delivery Volunteer / Fleet Partner
+
+
+================================================================================
+6. END-TO-END WORKFLOW TESTING (3-TAB TEST)
+================================================================================
+
+To verify that your entire platform is 100% operational:
+
+1. Open 3 browser tabs (or 1 normal tab + 2 incognito tabs):
+   - Tab 1: Log in as DONOR (donor@rescueflow.com)
+   - Tab 2: Log in as SHELTER (shelter@rescueflow.com)
+   - Tab 3: Log in as DRIVER (driver@rescueflow.com)
+
+2. In Tab 1 (Donor):
+   - Click "Donate Surplus Food".
+   - Select meals, category, and expiry clock.
+   - Click "Submit & Find Matches".
+   - Smart matching engine selects optimal shelter with transparent reasoning.
+   - Click "Confirm Match".
+
+3. In Tab 2 (Shelter):
+   - Incoming food notification pops up instantly via WebSockets.
+   - Shelter clicks "Accept Delivery".
+   - Nearest driver is automatically dispatched.
+
+4. In Tab 3 (Driver):
+   - Mission dispatch appears with pickup & drop-off locations.
+   - Driver clicks "Accept Mission".
+   - Driver clicks "Confirm Food Picked Up".
+
+5. In Tab 1 & Tab 2 (Live Tracking):
+   - Map draws the real road polyline connecting restaurant, driver, and shelter.
+   - Road distance (km) and real-time ETA update as driver location syncs.
+
+6. In Tab 3 (Driver):
+   - Driver clicks "Confirm Delivery Handover".
+   - Confetti animation triggers, donation is marked DELIVERED, and impact stats
+     (meals rescued, kg food diverted, CO2 emissions prevented) update globally.
+
+
+================================================================================
+7. COMMON PRODUCTION ERRORS & TROUBLESHOOTING
+================================================================================
+
+1. Error: "SyntaxError: Unexpected token '<' ..."
+   Cause: VITE_API_URL is missing or pointing to the Vercel domain instead of Render.
+   Solution: Set VITE_API_URL to https://<your-backend>.onrender.com/api in Vercel.
+
+2. Error: "CORS error: No 'Access-Control-Allow-Origin' header is present"
+   Cause: Backend FRONTEND_URL environment variable does not match your Vercel URL.
+   Solution: Set FRONTEND_URL=https://<your-app>.vercel.app in Render.
+
+3. Error: "WebSocket connection to 'wss://...' failed"
+   Cause: Mixed content (connecting from HTTPS Vercel to HTTP backend) or wrong socket URL.
+   Solution: Ensure backend has HTTPS/SSL enabled (automatic on Render).
+
+4. Data disappears after 15 minutes of inactivity on Render free tier:
+   Cause: Render free tier spins down idle instances, and in-memory database resets.
+   Solution: Connect real MongoDB Atlas cluster via MONGODB_URI.
+
+================================================================================
+EOF

@@ -204,7 +204,10 @@ export default function App() {
   const handleDonationCreated = async (newDonationData) => {
     try {
       const futureHours = 2.5;
-      const safeUntilISO = new Date(Date.now() + futureHours * 60 * 60 * 1000).toISOString();
+      const safeUntilISO = newDonationData.safeUntil || new Date(Date.now() + futureHours * 60 * 60 * 1000).toISOString();
+      const coords = Array.isArray(newDonationData.coords) && newDonationData.coords.length === 2
+        ? [Number(newDonationData.coords[0]), Number(newDonationData.coords[1])]
+        : [77.2197, 28.6328];
 
       const res = await api.donations.create({
         foodType: newDonationData.foodType,
@@ -214,9 +217,11 @@ export default function App() {
         safeUntil: safeUntilISO,
         notes: newDonationData.notes,
         pickupLocation: {
-          lat: 28.6328,
-          lng: 77.2197,
-          address: newDonationData.pickupLocation || 'ABC Restaurant, Delhi'
+          type: 'Point',
+          coordinates: coords,
+          lat: coords[1],
+          lng: coords[0],
+          address: newDonationData.pickupLocation || 'Pickup Point'
         }
       });
 
@@ -224,6 +229,8 @@ export default function App() {
         const createdUI = {
           ...newDonationData,
           id: res.donation._id,
+          _id: res.donation._id,
+          pickupCoordinates: coords,
           status: 'POSTED',
           statusLabel: 'MATCHING'
         };
@@ -236,16 +243,27 @@ export default function App() {
     }
   };
 
-  const handleMatchConfirmed = (matchedShelter) => {
+  const handleMatchConfirmed = async (matchedShelter) => {
     if (selectedDonation) {
+      const donationId = selectedDonation.id || selectedDonation._id;
+      const shelterId = matchedShelter.shelterId || matchedShelter._id || matchedShelter.id;
+
+      if (donationId && shelterId) {
+        try {
+          await api.matching.confirm(donationId, shelterId);
+        } catch (err) {
+          console.warn('Backend match confirm fallback:', err.message);
+        }
+      }
+
       const updated = {
         ...selectedDonation,
         shelter: matchedShelter,
-        status: 'ON_THE_WAY',
-        statusLabel: 'LIVE'
+        status: 'MATCHED',
+        statusLabel: 'MATCHED'
       };
       setSelectedDonation(updated);
-      setDonations(donations.map(d => d.id === updated.id ? updated : d));
+      setDonations(donations.map(d => (d.id === updated.id || d._id === updated.id) ? updated : d));
     }
   };
 

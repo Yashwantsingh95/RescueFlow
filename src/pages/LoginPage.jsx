@@ -324,6 +324,46 @@ export default function LoginPage({ onNavigate, onLoginSuccess }) {
           )}
         </button>
 
+        {/* Quick 1-Click Demo Selector */}
+        <div style={{
+          margin: '18px 0',
+          padding: '12px',
+          background: '#fdfbf7',
+          borderRadius: '10px',
+          border: '1.5px dashed var(--color-dark)',
+          textAlign: 'center'
+        }}>
+          <span style={{ fontSize: '0.72rem', fontWeight: 800, textTransform: 'uppercase', color: 'var(--color-muted)', display: 'block', marginBottom: '8px' }}>
+            ⚡ Instant 1-Click Demo Credentials:
+          </span>
+          <div style={{ display: 'flex', gap: '6px', justifyContent: 'center' }}>
+            <button
+              type="button"
+              onClick={() => { setEmail('donor@rescueflow.com'); setPassword('password123'); }}
+              className="neo-btn"
+              style={{ fontSize: '0.75rem', padding: '5px 10px', background: '#fefae0', border: '1.5px solid #000' }}
+            >
+              🍽️ Donor
+            </button>
+            <button
+              type="button"
+              onClick={() => { setEmail('shelter@rescueflow.com'); setPassword('password123'); }}
+              className="neo-btn"
+              style={{ fontSize: '0.75rem', padding: '5px 10px', background: '#d8f3dc', border: '1.5px solid #000' }}
+            >
+              🏠 Shelter
+            </button>
+            <button
+              type="button"
+              onClick={() => { setEmail('driver@rescueflow.com'); setPassword('password123'); }}
+              className="neo-btn"
+              style={{ fontSize: '0.75rem', padding: '5px 10px', background: '#e0e1dd', border: '1.5px solid #000' }}
+            >
+              🚐 Driver
+            </button>
+          </div>
+        </div>
+
         {/* Footer Link */}
         <div style={{ textAlign: 'center', fontSize: '0.9rem' }}>
           <span style={{ color: 'var(--color-muted)' }}>Need a new portal account? </span>
