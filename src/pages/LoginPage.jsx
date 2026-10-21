@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { HeartHandshake, Eye, EyeOff, Mail, Lock, ArrowRight, Loader2, ShieldCheck, AlertCircle } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { HeartHandshake, Eye, EyeOff, Mail, Lock, ArrowRight, Loader2, ShieldCheck, AlertCircle, X, Sparkles } from 'lucide-react';
 import { api } from '../services/api';
 
 export default function LoginPage({ onNavigate, onLoginSuccess }) {
@@ -9,6 +9,23 @@ export default function LoginPage({ onNavigate, onLoginSuccess }) {
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
   const [error, setError] = useState('');
+  const [dynamicGoogleClientId, setDynamicGoogleClientId] = useState('');
+  const [showGoogleModal, setShowGoogleModal] = useState(false);
+
+  // Auto-fetch runtime Google Client ID from backend
+  useEffect(() => {
+    const fetchConfig = async () => {
+      try {
+        const conf = await api.auth.getConfig();
+        if (conf?.googleClientId) {
+          setDynamicGoogleClientId(conf.googleClientId);
+        }
+      } catch (e) {
+        console.log('[Auth Config notice]', e.message);
+      }
+    };
+    fetchConfig();
+  }, []);
 
   const handleSuccessfulAuth = (user) => {
     if (onLoginSuccess) {
@@ -42,50 +59,96 @@ export default function LoginPage({ onNavigate, onLoginSuccess }) {
     }
   };
 
+  // 1-Click Instant Demo Login (with auto-seed if database is fresh)
+  const handleQuickDemoLogin = async (demoEmail) => {
+    setEmail(demoEmail);
+    setPassword('password123');
+    setLoading(true);
+    setError('');
+
+    try {
+      let res;
+      try {
+        res = await api.auth.login(demoEmail, 'password123');
+      } catch (loginErr) {
+        // If accounts don't exist yet in cloud DB, auto-seed and retry once
+        const msg = loginErr.message ? loginErr.message.toLowerCase() : '';
+        if (msg.includes('no account') || msg.includes('not found') || msg.includes('invalid')) {
+          await api.auth.seed();
+          res = await api.auth.login(demoEmail, 'password123');
+        } else {
+          throw loginErr;
+        }
+      }
+      if (res && res.user) {
+        handleSuccessfulAuth(res.user);
+      }
+    } catch (err) {
+      setError(err.message || 'Demo login failed. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // Real Google Sign-In via Google Identity Services
   const handleGoogleSignIn = () => {
     setGoogleLoading(true);
     setError('');
 
-    const googleClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
+    const googleClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID || dynamicGoogleClientId;
 
-    if (!googleClientId) {
-      setError('Google Sign-In requires VITE_GOOGLE_CLIENT_ID configured in your environment variables.');
-      setGoogleLoading(false);
-      return;
-    }
-
-    if (!window.google?.accounts?.id) {
-      setError('Google Identity Service is loading. Please check your internet connection and try again.');
-      setGoogleLoading(false);
-      return;
-    }
-
-    try {
-      window.google.accounts.id.initialize({
-        client_id: googleClientId,
-        callback: async (response) => {
-          try {
-            const res = await api.auth.googleAuth({ token: response.credential });
-            if (res && res.user) {
-              handleSuccessfulAuth(res.user);
+    if (window.google?.accounts?.id && googleClientId) {
+      try {
+        window.google.accounts.id.initialize({
+          client_id: googleClientId,
+          callback: async (response) => {
+            try {
+              const res = await api.auth.googleAuth({ token: response.credential });
+              if (res && res.user) {
+                handleSuccessfulAuth(res.user);
+              }
+            } catch (err) {
+              setError(err.message || 'Google authentication failed.');
+            } finally {
+              setGoogleLoading(false);
             }
-          } catch (err) {
-            setError(err.message || 'Google authentication failed.');
-          } finally {
+          }
+        });
+
+        window.google.accounts.id.prompt((notification) => {
+          if (notification.isNotDisplayed() || notification.isSkippedMoment()) {
+            console.warn('[Google Sign-In] One-Tap prompt moment:', notification.getNotDisplayedReason?.() || notification.getSkippedReason?.());
             setGoogleLoading(false);
           }
-        }
-      });
+        });
+      } catch (err) {
+        setError(err.message || 'Error initializing Google Sign-In.');
+        setGoogleLoading(false);
+      }
+    } else {
+      // If Google Client ID is not configured yet, offer 1-Click Demo Google Auth
+      setShowGoogleModal(true);
+      setGoogleLoading(false);
+    }
+  };
 
-      window.google.accounts.id.prompt((notification) => {
-        if (notification.isNotDisplayed() || notification.isSkippedMoment()) {
-          console.warn('[Google Sign-In] One-Tap prompt moment:', notification.getNotDisplayedReason?.() || notification.getSkippedReason?.());
-          setGoogleLoading(false);
-        }
+  const handleDemoGoogleAuth = async (role = 'DONOR') => {
+    setGoogleLoading(true);
+    setError('');
+    setShowGoogleModal(false);
+    try {
+      const res = await api.auth.googleAuth({
+        isDemo: true,
+        role,
+        name: 'Google Verified Partner',
+        email: 'google.partner@rescueflow.org'
       });
+      if (res && res.user) {
+        handleSuccessfulAuth(res.user);
+      }
     } catch (err) {
-      setError(err.message || 'Error initializing Google Sign-In.');
+      setError(err.message || 'Google authentication failed.');
+    } finally {
       setGoogleLoading(false);
     }
   };
@@ -347,7 +410,7 @@ export default function LoginPage({ onNavigate, onLoginSuccess }) {
           <div style={{ display: 'flex', gap: '6px', justifyContent: 'center' }}>
             <button
               type="button"
-              onClick={() => { setEmail('donor@rescueflow.com'); setPassword('password123'); }}
+              onClick={() => handleQuickDemoLogin('donor@rescueflow.com')}
               className="neo-btn"
               style={{ fontSize: '0.75rem', padding: '5px 10px', background: '#fefae0', border: '1.5px solid #000' }}
             >
@@ -355,7 +418,7 @@ export default function LoginPage({ onNavigate, onLoginSuccess }) {
             </button>
             <button
               type="button"
-              onClick={() => { setEmail('shelter@rescueflow.com'); setPassword('password123'); }}
+              onClick={() => handleQuickDemoLogin('shelter@rescueflow.com')}
               className="neo-btn"
               style={{ fontSize: '0.75rem', padding: '5px 10px', background: '#d8f3dc', border: '1.5px solid #000' }}
             >
@@ -363,7 +426,7 @@ export default function LoginPage({ onNavigate, onLoginSuccess }) {
             </button>
             <button
               type="button"
-              onClick={() => { setEmail('driver@rescueflow.com'); setPassword('password123'); }}
+              onClick={() => handleQuickDemoLogin('driver@rescueflow.com')}
               className="neo-btn"
               style={{ fontSize: '0.75rem', padding: '5px 10px', background: '#e0e1dd', border: '1.5px solid #000' }}
             >
@@ -383,6 +446,102 @@ export default function LoginPage({ onNavigate, onLoginSuccess }) {
           </span>
         </div>
       </div>
+
+      {/* Google OAuth Helper & Demo Modal */}
+      {showGoogleModal && (
+        <div style={{
+          position: 'fixed',
+          inset: 0,
+          background: 'rgba(0,0,0,0.6)',
+          backdropFilter: 'blur(3px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '20px',
+          zIndex: 9999
+        }}>
+          <div className="neo-card" style={{
+            background: '#ffffff',
+            maxWidth: '440px',
+            width: '100%',
+            padding: '24px',
+            position: 'relative'
+          }}>
+            <button
+              onClick={() => setShowGoogleModal(false)}
+              style={{
+                position: 'absolute',
+                top: '16px',
+                right: '16px',
+                background: 'none',
+                border: 'none',
+                cursor: 'pointer'
+              }}
+            >
+              <X size={20} />
+            </button>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '14px' }}>
+              <div style={{ width: '36px', height: '36px', borderRadius: '8px', background: '#f0ebd8', border: 'var(--border-dark)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <Sparkles size={20} color="#e76f51" />
+              </div>
+              <h3 style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: '1.2rem', fontWeight: 800 }}>
+                Google Sign-In Options
+              </h3>
+            </div>
+
+            <p style={{ fontSize: '0.88rem', color: 'var(--color-muted)', marginBottom: '16px', lineHeight: 1.5 }}>
+              Google Cloud OAuth Client ID is not yet configured in Render environment variables (<code>GOOGLE_CLIENT_ID</code>).
+            </p>
+
+            <div style={{ background: 'var(--color-bg)', padding: '14px', borderRadius: '8px', border: 'var(--border-dark)', marginBottom: '18px' }}>
+              <span style={{ fontSize: '0.8rem', fontWeight: 800, display: 'block', marginBottom: '4px' }}>
+                ⚡ Test Google Flow Instantly:
+              </span>
+              <p style={{ fontSize: '0.8rem', color: 'var(--color-muted)', marginBottom: '10px' }}>
+                You can log in right now with a simulated Google Verified Partner account:
+              </p>
+              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                <button
+                  type="button"
+                  onClick={() => handleDemoGoogleAuth('DONOR')}
+                  className="neo-btn"
+                  style={{ background: '#fefae0', fontSize: '0.78rem', padding: '6px 12px', border: '1.5px solid #000' }}
+                >
+                  As Donor
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleDemoGoogleAuth('SHELTER')}
+                  className="neo-btn"
+                  style={{ background: '#d8f3dc', fontSize: '0.78rem', padding: '6px 12px', border: '1.5px solid #000' }}
+                >
+                  As Shelter
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleDemoGoogleAuth('DRIVER')}
+                  className="neo-btn"
+                  style={{ background: '#e0e1dd', fontSize: '0.78rem', padding: '6px 12px', border: '1.5px solid #000' }}
+                >
+                  As Driver
+                </button>
+              </div>
+            </div>
+
+            <div style={{ textAlign: 'right' }}>
+              <button
+                type="button"
+                onClick={() => setShowGoogleModal(false)}
+                className="neo-btn neo-btn-outline"
+                style={{ padding: '8px 16px', fontSize: '0.85rem' }}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

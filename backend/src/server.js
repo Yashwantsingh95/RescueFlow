@@ -74,8 +74,11 @@ const startServer = async () => {
   try {
     await connectDB();
 
-    // Auto-seed demo data only if explicitly enabled
-    if (process.env.SEED_DEMO === 'true') {
+    // Auto-seed demo data if database is empty or explicitly enabled
+    const User = require('./models/User');
+    const userCount = await User.countDocuments();
+    if (process.env.SEED_DEMO === 'true' || userCount === 0) {
+      console.log(`[RESCUEFLOW] Seeding initial demo data (existing users = ${userCount})...`);
       await seedData();
     }
 

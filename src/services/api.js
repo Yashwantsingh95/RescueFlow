@@ -86,6 +86,8 @@ export const api = {
       return data;
     },
     me: async () => request('/auth/me'),
+    getConfig: async () => request('/auth/config'),
+    seed: async () => request('/auth/seed'),
     logout: () => {
       removeToken();
       localStorage.removeItem('rescueflow_user');

@@ -149,9 +149,9 @@ exports.login = async (req, res, next) => {
 // @route   POST /api/auth/google
 exports.googleAuth = async (req, res, next) => {
   try {
-    const { token: idToken, accessToken, role = 'DONOR', location } = req.body;
+    const { token: idToken, accessToken, role = 'DONOR', location, isDemo, email: demoEmail, name: demoName } = req.body;
 
-    if (!idToken && !accessToken) {
+    if (!idToken && !accessToken && !isDemo) {
       return res.status(400).json({
         success: false,
         message: 'Google credentials token is required'
@@ -159,6 +159,16 @@ exports.googleAuth = async (req, res, next) => {
     }
 
     let googleData = null;
+
+    // Demo Google token fallback for testing before setting up Google Cloud Console credentials
+    if (isDemo || idToken === 'demo-google-token') {
+      googleData = {
+        googleId: 'google-demo-user-12345',
+        email: (demoEmail || 'google.donor@rescueflow.org').toLowerCase(),
+        name: demoName || 'Google Verified Partner',
+        picture: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=120&h=120&q=80'
+      };
+    }
 
     // 1. Try Google OAuth ID token verification
     if (idToken) {
@@ -306,3 +316,28 @@ exports.getMe = async (req, res, next) => {
     next(error);
   }
 };
+
+// @desc    Get public authentication configuration
+// @route   GET /api/auth/config
+exports.getAuthConfig = (req, res) => {
+  res.json({
+    success: true,
+    googleClientId: process.env.GOOGLE_CLIENT_ID || process.env.VITE_GOOGLE_CLIENT_ID || ''
+  });
+};
+
+// @desc    Seed database on demand
+// @route   GET /api/auth/seed
+exports.triggerSeed = async (req, res, next) => {
+  try {
+    const { seedData } = require('../utils/seeder');
+    await seedData();
+    res.json({
+      success: true,
+      message: 'Demo accounts seeded successfully!'
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+

@@ -13,7 +13,8 @@ import {
   AlertTriangle,
   Search,
   Map,
-  X
+  X,
+  Sparkles
 } from 'lucide-react';
 import { api } from '../services/api';
 import { requestCurrentPosition, formatCoordinates } from '../services/locationService';
@@ -38,9 +39,27 @@ export default function SignupPage({ onNavigate, onLoginSuccess }) {
   const [showDonorMapPicker, setShowDonorMapPicker] = useState(false);
 
   const [loading, setLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
   const [locLoading, setLocLoading] = useState(false);
   const [error, setError] = useState('');
   const [locStatus, setLocStatus] = useState('');
+  const [dynamicGoogleClientId, setDynamicGoogleClientId] = useState('');
+  const [showGoogleModal, setShowGoogleModal] = useState(false);
+
+  // Auto-fetch runtime Google Client ID from backend
+  useEffect(() => {
+    const fetchConfig = async () => {
+      try {
+        const conf = await api.auth.getConfig();
+        if (conf?.googleClientId) {
+          setDynamicGoogleClientId(conf.googleClientId);
+        }
+      } catch (e) {
+        console.log('[Auth Config notice]', e.message);
+      }
+    };
+    fetchConfig();
+  }, []);
 
   // 1. Silently get approximate user coords on mount for nearby search bias
   useEffect(() => {
@@ -192,6 +211,93 @@ export default function SignupPage({ onNavigate, onLoginSuccess }) {
       setError(err.message || 'Registration failed.');
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Google Sign-Up with chosen Role
+  const handleGoogleSignUp = () => {
+    setGoogleLoading(true);
+    setError('');
+
+    const googleClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID || dynamicGoogleClientId;
+
+    const locPayload = coords && coords.length === 2 ? {
+      type: 'Point',
+      coordinates: coords,
+      address: location || 'Registered Location'
+    } : (location ? { address: location } : undefined);
+
+    if (window.google?.accounts?.id && googleClientId) {
+      try {
+        window.google.accounts.id.initialize({
+          client_id: googleClientId,
+          callback: async (response) => {
+            try {
+              const res = await api.auth.googleAuth({
+                token: response.credential,
+                role: role.toUpperCase(),
+                location: locPayload
+              });
+              if (onLoginSuccess && res?.user) {
+                onLoginSuccess(res.user);
+              } else {
+                if (role === 'donor') onNavigate('/donor/dashboard');
+                else if (role === 'shelter') onNavigate('/shelter/dashboard');
+                else if (role === 'driver') onNavigate('/driver/dashboard');
+              }
+            } catch (err) {
+              setError(err.message || 'Google registration failed.');
+            } finally {
+              setGoogleLoading(false);
+            }
+          }
+        });
+
+        window.google.accounts.id.prompt((notification) => {
+          if (notification.isNotDisplayed() || notification.isSkippedMoment()) {
+            console.warn('[Google Sign-Up] One-Tap prompt moment:', notification.getNotDisplayedReason?.() || notification.getSkippedReason?.());
+            setGoogleLoading(false);
+          }
+        });
+      } catch (err) {
+        setError(err.message || 'Error initializing Google Sign-Up.');
+        setGoogleLoading(false);
+      }
+    } else {
+      setShowGoogleModal(true);
+      setGoogleLoading(false);
+    }
+  };
+
+  const handleDemoGoogleSignUp = async () => {
+    setGoogleLoading(true);
+    setError('');
+    setShowGoogleModal(false);
+    try {
+      const locPayload = coords && coords.length === 2 ? {
+        type: 'Point',
+        coordinates: coords,
+        address: location || 'Registered Location'
+      } : (location ? { address: location } : undefined);
+
+      const res = await api.auth.googleAuth({
+        isDemo: true,
+        role: role.toUpperCase(),
+        name: orgName || `Google Verified ${role.toUpperCase()}`,
+        email: email || `google.${role}@rescueflow.org`,
+        location: locPayload
+      });
+      if (onLoginSuccess && res?.user) {
+        onLoginSuccess(res.user);
+      } else {
+        if (role === 'donor') onNavigate('/donor/dashboard');
+        else if (role === 'shelter') onNavigate('/shelter/dashboard');
+        else if (role === 'driver') onNavigate('/driver/dashboard');
+      }
+    } catch (err) {
+      setError(err.message || 'Google registration failed.');
+    } finally {
+      setGoogleLoading(false);
     }
   };
 
@@ -719,6 +825,52 @@ export default function SignupPage({ onNavigate, onLoginSuccess }) {
               </>
             )}
           </button>
+
+          {/* Divider */}
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '12px',
+            margin: '20px 0 16px 0'
+          }}>
+            <div style={{ flex: 1, height: '1px', background: '#e2dcc8' }} />
+            <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--color-muted)', textTransform: 'uppercase' }}>
+              or continue with
+            </span>
+            <div style={{ flex: 1, height: '1px', background: '#e2dcc8' }} />
+          </div>
+
+          {/* Real Google Sign-Up Button */}
+          <button
+            type="button"
+            onClick={handleGoogleSignUp}
+            disabled={googleLoading}
+            className="neo-btn neo-btn-outline"
+            style={{
+              width: '100%',
+              padding: '12px',
+              fontSize: '0.9rem',
+              background: '#ffffff',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '10px'
+            }}
+          >
+            {googleLoading ? (
+              <Loader2 size={18} className="animate-spin" />
+            ) : (
+              <>
+                <svg width="18" height="18" viewBox="0 0 18 18">
+                  <path fill="#4285F4" d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.717v2.258h2.908c1.702-1.567 2.684-3.874 2.684-6.616z" />
+                  <path fill="#34A853" d="M9 18c2.43 0 4.467-.806 5.956-2.184l-2.908-2.258c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332C2.438 15.983 5.482 18 9 18z" />
+                  <path fill="#FBBC05" d="M3.964 10.707c-.18-.54-.282-1.117-.282-1.707s.102-1.167.282-1.707V4.961H.957C.347 6.175 0 7.55 0 9s.347 2.825.957 4.039l3.007-2.332z" />
+                  <path fill="#EA4335" d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0 5.482 0 2.438 2.017.957 4.961L3.964 7.293C4.672 5.166 6.656 3.58 9 3.58z" />
+                </svg>
+                <span>Sign Up with Google as {role.toUpperCase()}</span>
+              </>
+            )}
+          </button>
         </form>
 
         <div style={{ textAlign: 'center', fontSize: '0.9rem', marginTop: '22px' }}>
@@ -731,6 +883,84 @@ export default function SignupPage({ onNavigate, onLoginSuccess }) {
           </span>
         </div>
       </div>
+
+      {/* Google OAuth Helper & Demo Modal */}
+      {showGoogleModal && (
+        <div style={{
+          position: 'fixed',
+          inset: 0,
+          background: 'rgba(0,0,0,0.6)',
+          backdropFilter: 'blur(3px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '20px',
+          zIndex: 9999
+        }}>
+          <div className="neo-card" style={{
+            background: '#ffffff',
+            maxWidth: '440px',
+            width: '100%',
+            padding: '24px',
+            position: 'relative'
+          }}>
+            <button
+              onClick={() => setShowGoogleModal(false)}
+              style={{
+                position: 'absolute',
+                top: '16px',
+                right: '16px',
+                background: 'none',
+                border: 'none',
+                cursor: 'pointer'
+              }}
+            >
+              <X size={20} />
+            </button>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '14px' }}>
+              <div style={{ width: '36px', height: '36px', borderRadius: '8px', background: '#f0ebd8', border: 'var(--border-dark)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <Sparkles size={20} color="#e76f51" />
+              </div>
+              <h3 style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: '1.2rem', fontWeight: 800 }}>
+                Google Sign-Up Options
+              </h3>
+            </div>
+
+            <p style={{ fontSize: '0.88rem', color: 'var(--color-muted)', marginBottom: '16px', lineHeight: 1.5 }}>
+              Google Cloud OAuth Client ID is not yet configured in Render environment variables (<code>GOOGLE_CLIENT_ID</code>).
+            </p>
+
+            <div style={{ background: 'var(--color-bg)', padding: '14px', borderRadius: '8px', border: 'var(--border-dark)', marginBottom: '18px' }}>
+              <span style={{ fontSize: '0.8rem', fontWeight: 800, display: 'block', marginBottom: '4px' }}>
+                ⚡ Test Google Sign-Up Instantly:
+              </span>
+              <p style={{ fontSize: '0.8rem', color: 'var(--color-muted)', marginBottom: '10px' }}>
+                Create and enter your portal as a Google Verified {role.toUpperCase()} right now:
+              </p>
+              <button
+                type="button"
+                onClick={handleDemoGoogleSignUp}
+                className="neo-btn neo-btn-dark"
+                style={{ width: '100%', padding: '10px', fontSize: '0.9rem' }}
+              >
+                Sign Up as Google {role.toUpperCase()} →
+              </button>
+            </div>
+
+            <div style={{ textAlign: 'right' }}>
+              <button
+                type="button"
+                onClick={() => setShowGoogleModal(false)}
+                className="neo-btn neo-btn-outline"
+                style={{ padding: '8px 16px', fontSize: '0.85rem' }}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
